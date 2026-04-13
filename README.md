@@ -1,50 +1,142 @@
-# Welcome to your Expo app 👋
+# YT Downloader (Expo + Python)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicativo React Native com Expo para baixar áudio e vídeo do YouTube, com servidor local em Flask + yt-dlp.
 
-## Get started
+## O Que O Projeto Faz
 
-1. Install dependencies
+- Busca formatos disponíveis no YouTube
+- Lista áudio por bitrate (incluindo mp3 quando ffmpeg está instalado)
+- Lista vídeo em mp4 por resolução (360p até 4K, conforme disponibilidade do vídeo)
+- Faz download com barra de progresso
+- Salva com nome do vídeo
+- Mostra status visual da API (online/offline) no aplicativo
 
-   ```bash
-   npm install
-   ```
+## Requisitos
 
-2. Start the app
+- Node.js 18+
+- npm 9+
+- Python 3.10+
+- ffmpeg (obrigatório para mp3 e vídeo acima de 360p)
+- Celular e computador na mesma rede local (Wi-Fi)
 
-   ```bash
-   npx expo start
-   ```
+## Instalação
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### 1) Dependências do aplicativo (Expo)
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2) Dependências do servidor Python
 
-## Learn more
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+### 3) Instalar ffmpeg
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Linux (Debian/Ubuntu):
 
-## Join the community
+```bash
+sudo apt update
+sudo apt install -y ffmpeg
+```
 
-Join our community of developers creating universal apps.
+Verificar:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+ffmpeg -version
+```
+
+## Como Rodar
+
+### Terminal 1: servidor
+
+```bash
+source .venv/bin/activate
+python server.py
+```
+
+Servidor padrão: `http://0.0.0.0:5000`
+
+### Terminal 2: aplicativo Expo
+
+```bash
+npx expo start --clear
+```
+
+## Uso no Aplicativo
+
+1. No campo de API, informe o IP local do computador, por exemplo:
+
+```text
+http://192.168.15.7:5000
+```
+
+2. Aguarde o indicador mostrar API online
+3. Cole a URL do YouTube
+4. Toque em Buscar formatos
+5. Escolha áudio ou vídeo e baixe
+
+## Comportamento Importante
+
+- Sem ffmpeg:
+- mp3 não é gerado
+- vídeo alto (720p, 1080p, 4K) pode não aparecer/mesclar
+
+- Com ffmpeg:
+- áudio pode ser convertido para mp3
+- vídeo + áudio são mesclados em mp4 em resoluções altas
+
+- Expo Go no Android tem limitações de acesso total à galeria
+- Para fluxo completo de mídia, prefira Build de Desenvolvimento
+
+## Estrutura Atual
+
+```text
+app/
+  _layout.tsx
+  index.tsx
+components/
+  downloader.tsx
+  navBar.tsx
+assets/images/
+server.py
+requirements.txt
+package.json
+package-lock.json
+app.json
+tsconfig.json
+```
+
+## Scripts Úteis
+
+```bash
+npm run start
+npm run android
+npm run ios
+npm run web
+npm run lint
+```
+
+## Solução de Problemas Rápida
+
+- API offline no aplicativo:
+- confirme IP correto
+- confirme servidor rodando em `0.0.0.0:5000`
+- teste no navegador do celular: `http://SEU_IP:5000/`
+
+- Download de vídeo grande falhando:
+- confirme ffmpeg instalado
+- reinicie backend após instalar ffmpeg
+
+- Formatos limitados:
+- alguns vídeos têm restrições de codecs/resoluções
+- atualize yt-dlp na venv:
+
+```bash
+source .venv/bin/activate
+pip install -U yt-dlp
+```

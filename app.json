@@ -28,6 +28,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Permitir acesso para salvar músicas.",
+          "savePhotosPermission": "Permitir salvar arquivos de áudio.",
+          "isAccessMediaLocationEnabled": true,
+          "granularPermissions": ["audio", "photo", "video"]
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
