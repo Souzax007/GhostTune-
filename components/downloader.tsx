@@ -37,8 +37,15 @@ const formatarTamanho = (bytes: number) => {
   return `${(bytes / 1024).toFixed(0)} KB`;
 };
 
+const extra = (Constants.expoConfig?.extra ?? {}) as { publicApiBase?: string };
+const API_PUBLICA_PADRAO =
+  typeof extra.publicApiBase === "string" ? extra.publicApiBase.trim() : "";
+
 const API_PADRAO =
-  Platform.OS === "android" ? "http://10.0.2.2:5000" : "http://localhost:5000";
+  API_PUBLICA_PADRAO ||
+  (Platform.OS === "android"
+    ? "http://10.0.2.2:5000"
+    : "http://localhost:5000");
 
 const normalizarApiBase = (valor: string) => {
   const trimmed = valor.trim();
