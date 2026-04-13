@@ -12,9 +12,33 @@ CORS(app)
 
 FORMATOS_CACHE = {}
 
+# 👉 caminho opcional de cookies (se usar depois)
+COOKIE_FILE = os.environ.get("YTDLP_COOKIE_FILE", None)
+
 
 def ffmpeg_ok():
     return shutil.which("ffmpeg") is not None
+
+
+# 🔥 função central de config do yt-dlp
+def get_ydl_opts(extra=None):
+    base = {
+        "quiet": True,
+        "noplaylist": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+        },
+        "source_address": "0.0.0.0",  # força IPv4
+    }
+
+    # 👉 se tiver cookie configurado
+    if COOKIE_FILE:
+        base["cookiefile"] = COOKIE_FILE
+
+    if extra:
+        base.update(extra)
+
+    return base
 
 
 @app.get("/")
@@ -28,10 +52,10 @@ def info():
     if not url:
         return jsonify({"erro": "Parâmetro 'url' é obrigatório."}), 400
 
-    print(f"[API] Recebida URL: {url}")
+    print(f"[API] URL: {url}")
     ffmpeg = ffmpeg_ok()
 
-    ydl_opts = {"quiet": True, "skip_download": True, "noplaylist": True}
+    ydl_opts = get_ydl_opts({"skip_download": True})
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -49,7 +73,7 @@ def info():
             height = f.get("height")
             abr = round(f.get("abr") or 0)
 
-            # ── Áudio puro ──────────────────────────────────────────────────
+            # Áudio
             if vcodec == "none" and acodec != "none":
                 if abr <= 0 or abr in seen_abr:
                     continue
@@ -57,6 +81,7 @@ def info():
 
                 fmt_id = uuid4().hex
                 ext_final = "mp3" if ffmpeg else (f.get("ext") or "m4a")
+
                 FORMATOS_CACHE[fmt_id] = {
                     "video_url": url,
                     "format_id": f.get("format_id"),
@@ -65,22 +90,20 @@ def info():
                     "converter_mp3": ffmpeg,
                     "title": titulo,
                 }
+
                 formatos_audio.append({
                     "id": fmt_id,
                     "tipo": "audio",
                     "bitrate": abr,
                     "ext": ext_final,
-                    "size": f.get("filesize") or f.get("filesize_approx") or 0,
                 })
 
-            # ── Vídeo (qualquer resolução >= 360p, com ou sem áudio) ────────
+            # Vídeo
             elif vcodec != "none" and height and height >= 360:
                 if height in seen_res:
                     continue
                 seen_res.add(height)
 
-                # Seletor dinâmico: tenta mp4+m4a, senão qualquer vídeo+audio,
-                # por último o melhor pré-mesclado disponível nessa resolução.
                 if ffmpeg:
                     fmt_sel = (
                         f"bestvideo[height={height}][ext=mp4]+bestaudio[ext=m4a]"
@@ -88,10 +111,10 @@ def info():
                         f"/best[height<={height}]"
                     )
                 else:
-                    # Sem ffmpeg: apenas pré-mesclados
-                    fmt_sel = f"best[height<={height}][ext=mp4]/best[height<={height}]"
+                    fmt_sel = f"best[height<={height}]"
 
                 fmt_id = uuid4().hex
+
                 FORMATOS_CACHE[fmt_id] = {
                     "video_url": url,
                     "format_id": fmt_sel,
@@ -101,30 +124,21 @@ def info():
                     "needs_merge": ffmpeg,
                     "title": titulo,
                 }
+
                 formatos_video.append({
                     "id": fmt_id,
                     "tipo": "video",
                     "resolucao": height,
                     "ext": "mp4",
-                    "size": f.get("filesize") or f.get("filesize_approx") or 0,
                 })
 
-        formatos_audio.sort(key=lambda x: x.get("bitrate", 0), reverse=True)
-        formatos_video.sort(key=lambda x: x.get("resolucao", 0), reverse=True)
-
-        aviso_ffmpeg = (
-            None if ffmpeg
-            else "ffmpeg não encontrado. MP3 e vídeos acima de 360p requerem ffmpeg instalado."
-        )
-
-        print(f"[API] Áudio: {len(formatos_audio)}, Vídeo: {len(formatos_video)}, ffmpeg: {ffmpeg}")
         return jsonify({
             "title": titulo or "Sem titulo",
-            "formatos": formatos_audio + formatos_video,
-            "aviso": aviso_ffmpeg,
+            "formatos": formatos_audio + formatos_video
         })
+
     except Exception as e:
-        print(f"[API] ERRO /info: {e}")
+        print(f"[ERRO /info]: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
@@ -132,87 +146,46 @@ def info():
 def download(fmt_id):
     fmt = FORMATOS_CACHE.get(fmt_id)
     if not fmt:
-        return jsonify({"erro": "Formato expirado ou inválido. Busque novamente."}), 404
+        return jsonify({"erro": "Formato inválido"}), 404
 
-    video_url = fmt.get("video_url")
-    format_id = fmt.get("format_id")
-    ext = fmt.get("ext") or "mp4"
-    tipo = fmt.get("tipo", "audio")
-    title = fmt.get("title", "") or "media"
-    converter_mp3 = fmt.get("converter_mp3", False)
-    needs_merge = fmt.get("needs_merge", False)
+    video_url = fmt["video_url"]
+    format_id = fmt["format_id"]
+    ext = fmt["ext"]
+    tipo = fmt["tipo"]
+    title = fmt.get("title", "media")
 
-    safe_title = re.sub(r'[^\w\s\-.]', '', title).strip()
-    safe_title = re.sub(r'\s+', '_', safe_title) or "media"
+    safe_title = re.sub(r'[^\w\s\-.]', '', title)
+    safe_title = re.sub(r'\s+', '_', safe_title)
 
-    if not video_url or not format_id:
-        return jsonify({"erro": "Dados do formato incompletos."}), 400
+    temp_dir = tempfile.gettempdir()
+    output_template = os.path.join(temp_dir, f"{fmt_id}.%(ext)s")
 
-    print(f"[API] Download: {fmt_id} | tipo={tipo} | ext={ext} | ffmpeg_mp3={converter_mp3}")
+    ydl_opts = get_ydl_opts({
+        "format": format_id,
+        "outtmpl": output_template,
+    })
 
     try:
-        temp_dir = tempfile.gettempdir()
-        # Usa %(ext)s para o yt-dlp controlar a extensão (especialmente após conversão)
-        output_template = os.path.join(temp_dir, f"media_{fmt_id}.%(ext)s")
-
-        ydl_opts = {
-            "quiet": True,
-            "noplaylist": True,
-            "format": format_id,
-            "outtmpl": output_template,
-            "retries": 5,
-            "fragment_retries": 5,
-            "skip_unavailable_fragments": True,
-            "continuedl": True,
-        }
-
-        if tipo == "audio" and converter_mp3:
-            # Converte para MP3 usando ffmpeg
-            ydl_opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "0",  # VBR melhor qualidade
-            }]
-
-        elif tipo == "video":
-            ydl_opts["merge_output_format"] = "mp4"
-            if needs_merge:
-                ydl_opts["postprocessors"] = [{
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",
-                }]
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 
-        # Localiza o arquivo gerado (extensão pode ter mudado após conversão)
-        output_path = os.path.join(temp_dir, f"media_{fmt_id}.{ext}")
-        if not os.path.exists(output_path):
-            # Busca qualquer arquivo gerado com esse ID
-            candidatos = [
-                os.path.join(temp_dir, f)
-                for f in os.listdir(temp_dir)
-                if f.startswith(f"media_{fmt_id}.")
-            ]
-            if not candidatos:
-                return jsonify({"erro": "Arquivo não encontrado após download."}), 500
-            output_path = candidatos[0]
-            ext = output_path.rsplit(".", 1)[-1]
+        files = [f for f in os.listdir(temp_dir) if f.startswith(fmt_id)]
+        if not files:
+            return jsonify({"erro": "Arquivo não encontrado"}), 500
 
-        print(f"[API] Arquivo pronto: {output_path}")
+        path = os.path.join(temp_dir, files[0])
+
         return send_file(
-            output_path,
+            path,
             as_attachment=True,
-            download_name=f"{safe_title}.{ext}",
-            mimetype="application/octet-stream",
-            conditional=True,
+            download_name=f"{safe_title}.{ext}"
         )
+
     except Exception as e:
-        print(f"[API] ERRO /download: {e}")
+        print(f"[ERRO /download]: {e}")
         return jsonify({"erro": str(e)}), 500
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    app.run(host="0.0.0.0", port=port)
